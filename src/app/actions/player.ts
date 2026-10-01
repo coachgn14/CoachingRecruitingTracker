@@ -9,6 +9,7 @@ import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { METRICS, POSITIONS, parseJson, type MetricMap, type VideoMap } from "@/lib/domain";
 import { buildSnapshot, missingForSubmission, parseProfileForm } from "@/lib/profile";
+import { paymentsMode } from "@/lib/stripe";
 import { formValues, type FormState } from "./types";
 
 export async function saveProfile(_prev: FormState, fd: FormData): Promise<FormState> {
@@ -74,13 +75,11 @@ export async function createSubmission() {
   redirect(`/player/submissions/${submission.id}/pay`);
 }
 
-// Test-mode checkout. Replace with a Stripe Checkout session + webhook that
-// performs this same update once payment succeeds.
+// Test-mode checkout, only available when no Stripe Payment Link is
+// configured. Real payments are confirmed by /api/stripe/webhook.
 export async function completeTestPayment(submissionId: string) {
   const user = await requireUser("PLAYER");
-  if (process.env.PAYMENTS_MODE && process.env.PAYMENTS_MODE !== "test") {
-    throw new Error("Test payments are disabled.");
-  }
+  if (paymentsMode() !== "test") throw new Error("Test payments are disabled.");
   const result = await db.submission.updateMany({
     where: { id: submissionId, playerId: user.id, status: "AWAITING_PAYMENT" },
     data: { status: "OPEN", paidAt: new Date(), paymentRef: `TEST-${randomUUID()}` },

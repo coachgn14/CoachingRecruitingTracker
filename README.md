@@ -60,6 +60,21 @@ The levels coaches choose from are: D1 Power, D1 Mid-Major, D1 Low-Major, D2, D3
 - **"What to improve" options:** `src/config/improvements.ts`.
 - **Price, claim window and product name:** `.env` and `src/config/site.ts`.
 
+## Payments (Stripe Payment Link)
+Players pay through the Stripe Payment Link in `STRIPE_PAYMENT_LINK_URL`. The app adds the submission ID (`client_reference_id`) and the player's email to the link. When Stripe's webhook reports a paid checkout, `/api/stripe/webhook` marks that submission paid and it goes into the coach queue. The redirect back to the site is never trusted on its own.
+
+One-time setup in the Stripe dashboard:
+1. **Payment Link → After payment → "Don't show confirmation page", redirect to your website:**
+   `https://<your-site>/player/payment-complete?session_id={CHECKOUT_SESSION_ID}`
+2. **Developers → Webhooks → Add endpoint:** `https://<your-site>/api/stripe/webhook`, with the events
+   `checkout.session.completed` and `checkout.session.async_payment_succeeded`.
+   Copy its signing secret (`whsec_...`) into `STRIPE_WEBHOOK_SECRET`.
+3. Keep `EVALUATION_PRICE_CENTS` equal to the link's price. The link's price is what gets charged; this value is only what the site displays.
+
+For local testing, run the [Stripe CLI](https://docs.stripe.com/stripe-cli):
+`stripe listen --forward-to localhost:3000/api/stripe/webhook`, and use the `whsec_...` it prints.
+With `STRIPE_PAYMENT_LINK_URL` empty, the site falls back to a test checkout that charges nothing.
+
 ## Running locally
 Requires Node 22+.
 
@@ -91,7 +106,7 @@ src/app/actions/            server actions (all auth-checked)
 ```
 
 ## Not built yet (before launch)
-- **Real payments.** Checkout runs in test mode (`PAYMENTS_MODE="test"`) and charges nothing. The next step is a Stripe Checkout session plus a webhook that marks the submission paid (`completeTestPayment` in `src/app/actions/player.ts` shows the update to make).
+- **Refunds** are handled by hand in the Stripe dashboard.
 - **File storage for production.** Coach proof uploads go to local disk (`STORAGE_DIR`). For hosting, swap `src/lib/storage.ts` to S3/R2/GCS.
 - **Email notifications.** For example: evaluation complete, coach approved, and new players in the queue.
 - **Password reset** and email verification.
