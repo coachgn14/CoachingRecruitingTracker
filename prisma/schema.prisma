@@ -1,0 +1,131 @@
+// Data model for the evaluation marketplace.
+//
+// String columns are used in place of enums so the schema runs unchanged on
+// SQLite (local dev) and Postgres (production). Allowed values live in
+// src/lib/domain.ts.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  role         String // PLAYER | COACH | ADMIN
+  createdAt    DateTime @default(now())
+
+  sessions      Session[]
+  playerProfile PlayerProfile?
+  coachProfile  CoachProfile?
+  submissions   Submission[]
+  evaluations   Evaluation[]
+}
+
+model Session {
+  id        String   @id // sha256 of the cookie token
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PlayerProfile {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  firstName    String
+  lastName     String
+  playerType   String // HIGH_SCHOOL | JUCO
+  school       String   @default("")
+  state        String   @default("")
+  gradYear     Int?
+  heightInches Int?
+  weightLbs    Int?
+  position     String? // see POSITIONS
+  throws       String? // R | L
+  bats         String? // R | L | S
+  metrics      String   @default("{}") // JSON: { [metricKey]: { value, source, measuredOn } }
+  videos       String   @default("{}") // JSON: { [clipKey]: { url } }
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CoachProfile {
+  id                String    @id @default(cuid())
+  userId            String    @unique
+  firstName         String
+  lastName          String
+  school            String
+  title             String
+  division          String // D1 | D2 | D3 | NAIA | JUCO
+  phone             String    @default("")
+  staffDirectoryUrl String    @default("")
+  proofFilePath     String? // relative to STORAGE_DIR
+  proofFileName     String?
+  proofMimeType     String?
+  status            String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  reviewNote        String    @default("")
+  reviewedAt        DateTime?
+  createdAt         DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Submission {
+  id          String    @id @default(cuid())
+  playerId    String
+  status      String    @default("AWAITING_PAYMENT") // AWAITING_PAYMENT | OPEN | COMPLETE
+  position    String
+  gradYear    Int
+  snapshot    String // JSON SubmissionSnapshot, frozen at submit time
+  amountCents Int
+  paymentRef  String?
+  paidAt      DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  player      User         @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  evaluations Evaluation[]
+
+  @@index([status])
+  @@index([playerId])
+}
+
+// One row per coach slot on a submission. Slot 1 is always the Division 1
+// coach; slots 2 and 3 are filled by coaches from two different non-D1
+// divisions. The unique constraints make these rules hold even when two
+// coaches try to claim at the same moment.
+model Evaluation {
+  id            String    @id @default(cuid())
+  submissionId  String
+  slot          Int
+  coachId       String
+  coachDivision String
+  status        String    @default("CLAIMED") // CLAIMED | SUBMITTED
+  claimedAt     DateTime  @default(now())
+  submittedAt   DateTime?
+
+  metricGrades     String @default("{}") // JSON: { [metricKey]: LevelKey }
+  currentLevel     String?
+  targetLevel      String?
+  improvements     String @default("[]") // JSON: string[] of improvement keys
+  improvementNotes String @default("")
+  overallFeedback  String @default("")
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  coach      User       @relation(fields: [coachId], references: [id], onDelete: Cascade)
+
+  @@unique([submissionId, slot])
+  @@unique([submissionId, coachDivision])
+  @@unique([submissionId, coachId])
+  @@index([coachId])
+}
